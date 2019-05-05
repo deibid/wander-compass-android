@@ -86,6 +86,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private TextView updatesTv;
     private Button scanBt;
     private TextView statusTv;
+    private TextView serverStatusTv;
     private Button writeCharacteristicLeft;
     private Button writeCharacteristicStraight;
     private Button writeCharacteristicRight;
@@ -94,7 +95,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private boolean mTrackingLocation = false;
 
     private Socket mSocket;
-    private static final String IP_ADDRESS = "10.17.209.0:3000";
+    private static final String URL = "https://wander-compass.herokuapp.com/";
     private static final String EVENT_SEND_DIRECTIONS = "send-directions";
 
     private static final int LOCATION_PERMISSION_REQUEST = 0;
@@ -136,6 +137,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
 
         statusTv = findViewById(R.id.scanStatusTv);
+
+        serverStatusTv = findViewById(R.id.serverStatus);
 
 
         writeCharacteristicLeft = findViewById(R.id.writeCharacteristicLeft);
@@ -267,7 +270,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         try{
 
 
-            mSocket = IO.socket("http://"+IP_ADDRESS);
+            mSocket = IO.socket(URL);
             mSocket.connect();
 
 
@@ -275,6 +278,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 @Override
                 public void call(Object... args) {
                     Log.d("Socket","CONNECTED");
+                    serverStatusTv.setText(R.string.server_connected);
                 }
             }).on(EVENT_SEND_DIRECTIONS, new Emitter.Listener() {
                 @Override
@@ -300,6 +304,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 @Override
                 public void call(Object... args) {
                     Log.d("Socket", "Disconneted");
+                    serverStatusTv.setText(R.string.server_disconnected);
                 }
             });
 

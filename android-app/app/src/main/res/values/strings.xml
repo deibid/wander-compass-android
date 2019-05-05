@@ -11,4 +11,8 @@
     <string name="stop_gps_tracking">Stop GPS Tracking</string>
     <string name="ble_standby">Bluetooth Standby</string>
 
+    <string name="server_status">Server status</string>
+    <string name="server_connected">Connected</string>
+    <string name="server_disconnected">Disconnected</string>
+
 </resources>

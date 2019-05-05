@@ -30,7 +30,7 @@
         </activity>
 
 
-        <service android:name=".GPSService"/>
+        <!--<service android:name=".GPSService"/>-->
 
     </application>
 
