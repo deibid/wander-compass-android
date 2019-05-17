@@ -32,7 +32,7 @@
         </activity>
 
 
-        <service android:name=".services.GPSService"/>
+        <service android:name=".services.MainService"/>
 
     </application>
 

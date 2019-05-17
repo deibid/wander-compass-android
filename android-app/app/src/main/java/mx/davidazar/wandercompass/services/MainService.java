@@ -65,7 +65,7 @@ import static android.bluetooth.BluetoothAdapter.STATE_CONNECTED;
 import static android.bluetooth.BluetoothAdapter.STATE_CONNECTING;
 import static android.bluetooth.BluetoothAdapter.STATE_DISCONNECTED;
 
-public class GPSService extends Service {
+public class MainService extends Service {
 
 
     private BluetoothAdapter mBluetoothAdapter;
@@ -92,6 +92,11 @@ public class GPSService extends Service {
     private static final long SCAN_PERIOD = 5000;
     private static final int LOCATION_TRACKING_INTERVAL = 1000;
     private static final int LOCATION_PERMISSION_REQUEST = 0;
+
+    //MKR 1010 Version
+//    private static final UUID WANDER_COMPASS_UUID = UUID.fromString("19b10010-e8f2-537e-4f6c-d104768a1214");
+//    private static final UUID WANDER_COMPASS_DIRECTION_CHARACTERISTIC_UUID = UUID.fromString("19b10013-e8f2-537e-4f6c-d104768a1214");
+//    private static final String WANDER_COMPASS_NAME = "Wander Compass";
 
 
     private Handler mHandler;
@@ -146,17 +151,8 @@ public class GPSService extends Service {
                     locationUpdates++;
                     LocationEvent le = new LocationEvent(msg,locationUpdates, LocationEvent.Event.LOCATION_RESULT);
                     EventBus.getDefault().post(le);
-//                    locationTv.setText(msg);
-//                    updatesTv.setText(String.valueOf(locationUpdates));
-
                     sendLocationToServer(lng,lat);
                 }
-
-//                LocationEvent le = new LocationEvent(msg);
-//                locationUpdates++;
-//                locationTv.setText(msg);
-//                updatesTv.setText(String.valueOf(locationUpdates));
-
 
             }
 
@@ -437,29 +433,12 @@ public class GPSService extends Service {
                 BluetoothEvent be = new BluetoothEvent(BluetoothEvent.Event.CONNECTED);
                 EventBus.getDefault().post(be);
 
-//                runOnUiThread(new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        statusTv.setText("Connected!");
-//                        writeCharacteristicLeft.setEnabled(true);
-//                        writeCharacteristicStraight.setEnabled(true);
-//                        writeCharacteristicRight.setEnabled(true);
-//                    }
-//                });
-
             }
 
             if(newState == STATE_CONNECTING){
 
                 BluetoothEvent be = new BluetoothEvent(BluetoothEvent.Event.CONNECTING);
                 EventBus.getDefault().post(be);
-
-//                runOnUiThread(new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        statusTv.setText("Connecting...");
-//                    }
-//                });
 
             }
 
@@ -468,17 +447,6 @@ public class GPSService extends Service {
 
                 BluetoothEvent be = new BluetoothEvent(BluetoothEvent.Event.DISCONNECTED);
                 EventBus.getDefault().post(be);
-
-//                runOnUiThread(new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        statusTv.setText(R.string.ble_standby);
-//                        writeCharacteristicLeft.setEnabled(false);
-//                        writeCharacteristicStraight.setEnabled(false);
-//                        writeCharacteristicRight.setEnabled(false);
-//                    }
-//                });
-
             }
         }
 
