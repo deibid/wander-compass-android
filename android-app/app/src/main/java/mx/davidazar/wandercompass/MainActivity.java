@@ -25,13 +25,12 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
 
-import com.github.nkzawa.emitter.Emitter;
-import com.github.nkzawa.socketio.client.IO;
 import com.github.nkzawa.socketio.client.Socket;
 import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -46,14 +45,21 @@ import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.net.URISyntaxException;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+
+import mx.davidazar.wandercompass.events.BluetoothEvent;
+import mx.davidazar.wandercompass.events.DirectionEvent;
+import mx.davidazar.wandercompass.events.LocationEvent;
+import mx.davidazar.wandercompass.events.ServerEvent;
+import mx.davidazar.wandercompass.services.GPSService;
 
 import static android.bluetooth.BluetoothAdapter.STATE_CONNECTED;
 import static android.bluetooth.BluetoothAdapter.STATE_CONNECTING;
@@ -120,10 +126,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        //Prevent phone from sleeping when the Activity is open
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        initializeSocket();
+
+//        initializeSocket();
         initializeBluetooth();
 
+        Intent gpsService = new Intent(this, GPSService.class);
+        startService(gpsService);
 
         mContext = this;
         mHandler = new Handler();
@@ -157,328 +168,400 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
 
 
-        createLocationRequest();
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-
-        locationCallback = new LocationCallback(){
-
-            @Override
-            public void onLocationResult(LocationResult locationResult) {
-                if(locationResult == null){
-                    Log.d("Location Result","No location");
-                    return;
-                }
-
-                for(Location location : locationResult.getLocations()){
-                    Log.d("Location Result Loop","Recibi Locations #"+locationResult.getLocations().size());
-                    Log.d("Location Result loop",location.toString());
-                    double lng = location.getLongitude();
-                    double lat = location.getLatitude();
-                    String msg = formatDouble(lng)+" , "+formatDouble(lat);
-                    locationTv.setText(msg);
-                    sendLocationToServer(lng,lat);
-                }
-
-                locationUpdates++;
-                updatesTv.setText(String.valueOf(locationUpdates));
-
-
-            }
-
-        };
+//        createLocationRequest();
+//        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+//
+//        locationCallback = new LocationCallback(){
+//
+//            @Override
+//            public void onLocationResult(LocationResult locationResult) {
+//                if(locationResult == null){
+//                    Log.d("Location Result","No location");
+//                    return;
+//                }
+//
+//                for(Location location : locationResult.getLocations()){
+//                    Log.d("Location Result Loop","Recibi Locations #"+locationResult.getLocations().size());
+//                    Log.d("Location Result loop",location.toString());
+//                    double lng = location.getLongitude();
+//                    double lat = location.getLatitude();
+//                    String msg = formatDouble(lng)+" , "+formatDouble(lat);
+//                    locationTv.setText(msg);
+//                    sendLocationToServer(lng,lat);
+//                }
+//
+//                locationUpdates++;
+//                updatesTv.setText(String.valueOf(locationUpdates));
+//
+//
+//            }
+//
+//        };
 
 
     }
 
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        EventBus.getDefault().register(this);
 
 
-    private void startLocationUpdates(){
 
-        mTrackingLocation = true;
-        gpsToggleBt.setText(R.string.stop_gps_tracking);
+    }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            Log.d("Perm","Not Granted");
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                    LOCATION_PERMISSION_REQUEST);
+    @Override
+    protected void onStop() {
+        super.onStop();
+        EventBus.getDefault().unregister(this);
+    }
 
-        }else{
-            fusedLocationClient.requestLocationUpdates(locationRequest,locationCallback,null);
-            Log.d("Perm","Permission granted");
+    @Subscribe
+    public void onEvent(LocationEvent locationEvent){
+        Log.d("Main","Location Event "+locationEvent);
+
+        if(locationEvent.getEvent() == LocationEvent.Event.LOCATION_RESULT){
+            locationTv.setText(locationEvent.getLocation());
+            updatesTv.setText(String.valueOf(locationEvent.getUpdates()));
         }
+    }
 
-
+    @Subscribe
+    public void onEvent(ServerEvent serverEvent){
+        Log.d("Main Server Event"," Event:> "+serverEvent.getStatus());
+        serverStatusTv.setText(R.string.server_connected);
     }
 
 
-    private void stopLocationUpdates(){
-        mTrackingLocation = true;
-        gpsToggleBt.setText(R.string.start_gps_tracking);
-        locationTv.setText("");
-        updatesTv.setText("");
-        fusedLocationClient.removeLocationUpdates(locationCallback);
-    }
+    @Subscribe
+    public void onEvent(BluetoothEvent bluetoothEvent){
 
+        switch(bluetoothEvent.getEvent()){
+            case CONNECTED:
 
-
-    protected void createLocationRequest(){
-
-        locationRequest = LocationRequest.create();
-        locationRequest.setInterval(2000);
-        locationRequest.setFastestInterval(1000);
-        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-
-
-        LocationSettingsRequest.Builder settingBuilder = new LocationSettingsRequest.Builder()
-                .addLocationRequest(locationRequest);
-
-        SettingsClient client = LocationServices.getSettingsClient(this);
-        Task <LocationSettingsResponse> task = client.checkLocationSettings(settingBuilder.build());
-
-
-        task.addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
-            @Override
-            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
-                Log.d("Task Settings","Success");
-            }
-        });
-
-
-        task.addOnFailureListener(this, new OnFailureListener() {
-            @Override
-            public void onFailure(@NonNull Exception e) {
-
-                if (e instanceof ResolvableApiException) {
-                    try{
-                        ResolvableApiException resolvable = (ResolvableApiException) e;
-                        resolvable.startResolutionForResult(MainActivity.this, 0);
-                    }catch( IntentSender.SendIntentException sendEx){
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        statusTv.setText("Connected!");
+                        writeCharacteristicLeft.setEnabled(true);
+                        writeCharacteristicStraight.setEnabled(true);
+                        writeCharacteristicRight.setEnabled(true);
                     }
-                }
-            }
-        });
-    }
+                });
 
+                break;
 
+            case CONNECTING:
+                statusTv.setText("Connecting...");
+                break;
 
-    private void initializeSocket(){
+            case SCANNING:
+                statusTv.setText(R.string.scanning);
+                scanBt.setEnabled(false);
+                break;
 
-        Log.d("socket", "init");
+            case STAND_BY:
+                break;
 
-        try{
+            case DEVICE_FOUND:
+                statusTv.setText("Scan Successful");
+                Log.d("Wander Compass","Lo tengo Desde service post");
+                break;
 
+            case DISCONNECTED:
+                statusTv.setText(R.string.ble_standby);
+                writeCharacteristicLeft.setEnabled(false);
+                writeCharacteristicStraight.setEnabled(false);
+                writeCharacteristicRight.setEnabled(false);
+                break;
 
-            mSocket = IO.socket(URL);
-            mSocket.connect();
-
-
-            mSocket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    Log.d("Socket","CONNECTED");
-                    serverStatusTv.setText(R.string.server_connected);
-                }
-            }).on(EVENT_SEND_DIRECTIONS, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-
-
-//                    Log.d("Recibí mesaje", args.toString());
-                    JSONObject obj = (JSONObject)args[0];
-//                    Log.d("Recibí objeto", obj.toString());
-
-                    try{
-                        String commandStr = obj.getString("to");
-                        int command = Integer.parseInt(commandStr);
-
-                        writeLECharacteristic(command);
-                    }catch(JSONException jsone){
-                        Log.w("Error",jsone.getMessage());
-                    }
-
-
-                }
-            }).on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    Log.d("Socket", "Disconneted");
-                    serverStatusTv.setText(R.string.server_disconnected);
-                }
-            });
-
-        }catch(URISyntaxException e){
-            Log.d("Error",e.toString());
+            case SCAN_ERROR:
+                statusTv.setText("Scan Error");
+                break;
         }
 
     }
 
-    private void sendLocationToServer(double lng,double lat){
+
+//    private void startLocationUpdates(){
+//
+//        mTrackingLocation = true;
+//        gpsToggleBt.setText(R.string.stop_gps_tracking);
+//
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+//                != PackageManager.PERMISSION_GRANTED) {
+//            Log.d("Perm","Not Granted");
+//            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+//                    LOCATION_PERMISSION_REQUEST);
+//
+//        }else{
+//            fusedLocationClient.requestLocationUpdates(locationRequest,locationCallback,null);
+//            Log.d("Perm","Permission granted");
+//        }
+//
+//
+//    }
+//
+//
+//    private void stopLocationUpdates(){
+//        mTrackingLocation = true;
+//        gpsToggleBt.setText(R.string.start_gps_tracking);
+//        locationTv.setText("");
+//        updatesTv.setText("");
+//        fusedLocationClient.removeLocationUpdates(locationCallback);
+//    }
+//
+//
+//
+//    protected void createLocationRequest(){
+//
+//        locationRequest = LocationRequest.create();
+//        locationRequest.setInterval(2000);
+//        locationRequest.setFastestInterval(1000);
+//        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+//
+//
+//        LocationSettingsRequest.Builder settingBuilder = new LocationSettingsRequest.Builder()
+//                .addLocationRequest(locationRequest);
+//
+//        SettingsClient client = LocationServices.getSettingsClient(this);
+//        Task <LocationSettingsResponse> task = client.checkLocationSettings(settingBuilder.build());
+//
+//
+//        task.addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
+//            @Override
+//            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+//                Log.d("Task Settings","Success");
+//            }
+//        });
+//
+//
+//        task.addOnFailureListener(this, new OnFailureListener() {
+//            @Override
+//            public void onFailure(@NonNull Exception e) {
+//
+//                if (e instanceof ResolvableApiException) {
+//                    try{
+//                        ResolvableApiException resolvable = (ResolvableApiException) e;
+//                        resolvable.startResolutionForResult(MainActivity.this, 0);
+//                    }catch( IntentSender.SendIntentException sendEx){
+//                    }
+//                }
+//            }
+//        });
+//    }
 
 
-        try{
 
-            JSONObject obj = new JSONObject();
-            obj.put("lng",lng);
-            obj.put("lat",lat);
+//    private void initializeSocket(){
+//
+//        Log.d("socket", "init");
+//
+//        try{
+//
+//
+//            mSocket = IO.socket(URL);
+//            mSocket.connect();
+//
+//
+//            mSocket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
+//                @Override
+//                public void call(Object... args) {
+//                    Log.d("Socket","CONNECTED");
+//                    serverStatusTv.setText(R.string.server_connected);
+//                }
+//            }).on(EVENT_SEND_DIRECTIONS, new Emitter.Listener() {
+//                @Override
+//                public void call(Object... args) {
+//
+//
+////                    Log.d("Recibí mesaje", args.toString());
+//                    JSONObject obj = (JSONObject)args[0];
+////                    Log.d("Recibí objeto", obj.toString());
+//
+//                    try{
+//                        String commandStr = obj.getString("to");
+//                        int command = Integer.parseInt(commandStr);
+//
+//                        writeLECharacteristic(command);
+//                    }catch(JSONException jsone){
+//                        Log.w("Error",jsone.getMessage());
+//                    }
+//
+//
+//                }
+//            }).on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
+//                @Override
+//                public void call(Object... args) {
+//                    Log.d("Socket", "Disconneted");
+//                    serverStatusTv.setText(R.string.server_disconnected);
+//                }
+//            });
+//
+//        }catch(URISyntaxException e){
+//            Log.d("Error",e.toString());
+//        }
+//
+//    }
 
-            Log.d("Socket","Sending location to server->  \n"+obj.toString());
-            mSocket.emit("new-location-from-phone", obj);
-
-        }catch(JSONException je){
-            Log.d("error with JSON", je.toString());
-        }
-
-    }
+//    private void sendLocationToServer(double lng,double lat){
+//
+//
+//        try{
+//
+//            JSONObject obj = new JSONObject();
+//            obj.put("lng",lng);
+//            obj.put("lat",lat);
+//
+//            Log.d("Socket","Sending location to server->  \n"+obj.toString());
+//            mSocket.emit("new-location-from-phone", obj);
+//
+//        }catch(JSONException je){
+//            Log.d("error with JSON", je.toString());
+//        }
+//
+//    }
 
 
 
     private void initializeBluetooth(){
 
-
         final BluetoothManager manager = (BluetoothManager)getSystemService(Context.BLUETOOTH_SERVICE);
         mBluetoothAdapter = manager.getAdapter();
-
 
         if(mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()){
             Intent enableBTIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBTIntent,REQUEST_ENABLE_INTENT);
         }
-
-
-
-
-
     }
-
-
-
-    private void startLEScan(){
-
-
-        final BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
-
-        List<ScanFilter> leScanFilter = Arrays.asList(new ScanFilter[]{
-                        new ScanFilter.Builder()
-                                .setDeviceName(WANDER_COMPASS_NAME)
-                                .build()
-                });
-
-        ScanSettings.Builder builderScanSettings = new ScanSettings.Builder();
-        builderScanSettings.setScanMode(ScanSettings.SCAN_MODE_BALANCED);
-        builderScanSettings.setReportDelay(0);
-
-
-//        Log.d("Bluetooth","Scanning...");
-        statusTv.setText(R.string.scanning);
-
-
-        mHandler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                scanner.stopScan(mLeScanCallback);
-                scanBt.setEnabled(true);
-                statusTv.setText(R.string.ble_standby);
-
-            }
-        },SCAN_PERIOD);
-
-        scanner.startScan(leScanFilter,builderScanSettings.build(),mLeScanCallback);
-
-        scanBt.setEnabled(false);
-
-
-
-    }
-
-
-
-    private ScanCallback mLeScanCallback = new ScanCallback() {
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            super.onScanResult(callbackType, result);
-            statusTv.setText("Scan Successful");
-            Log.d("Wander Compass","Lo tengo");
-            mGatt = result.getDevice().connectGatt(mContext,true, mGattCallback);
-
-        }
-
-        @Override
-        public void onBatchScanResults(List<ScanResult> results) {
-            super.onBatchScanResults(results);
-//            statusTv.setText("Results go here");
-//            Log.d("Bluetooth Scan",results.toString());
-        }
-
-        @Override
-        public void onScanFailed(int errorCode) {
-            super.onScanFailed(errorCode);
-            statusTv.setText("Scan Error");
-
-        }
-
-    };
-
-
-    private BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
-        @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-            super.onConnectionStateChange(gatt, status, newState);
-            if(newState == STATE_CONNECTED){
-                mDeviceConnected = true;
-                mGatt.discoverServices();
-                statusTv.setText("Connected!");
-
-                writeCharacteristicLeft.setEnabled(true);
-                writeCharacteristicStraight.setEnabled(true);
-                writeCharacteristicRight.setEnabled(true);
-
-
-            }
-
-            if(newState == STATE_CONNECTING){
-                statusTv.setText("Connecting...");
-            }
-
-            if(newState == STATE_DISCONNECTED){
-                mDeviceConnected = false;
-                statusTv.setText(R.string.ble_standby);
-                writeCharacteristicLeft.setEnabled(false);
-                writeCharacteristicStraight.setEnabled(false);
-                writeCharacteristicRight.setEnabled(false);
-            }
-        }
-
-//        @Override
-//        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-//            super.onServicesDiscovered(gatt, status);
 //
-//            BluetoothGattCharacteristic characteristic =
-//                    gatt.getService(WANDER_COMPASS_UUID).getCharacteristic(WANDER_COMPASS_DIRECTION_CHARACTERISTIC_UUID);
+//
+//
+//    private void startLEScan(){
+//
+//
+//        final BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
+//
+//        List<ScanFilter> leScanFilter = Arrays.asList(new ScanFilter[]{
+//                        new ScanFilter.Builder()
+//                                .setDeviceName(WANDER_COMPASS_NAME)
+//                                .build()
+//                });
+//
+//        ScanSettings.Builder builderScanSettings = new ScanSettings.Builder();
+//        builderScanSettings.setScanMode(ScanSettings.SCAN_MODE_BALANCED);
+//        builderScanSettings.setReportDelay(0);
+//
+//
+////        Log.d("Bluetooth","Scanning...");
+//        statusTv.setText(R.string.scanning);
+//
+//
+//        mHandler.postDelayed(new Runnable() {
+//            @Override
+//            public void run() {
+//                scanner.stopScan(mLeScanCallback);
+//                scanBt.setEnabled(true);
+//                statusTv.setText(R.string.ble_standby);
+//
+//            }
+//        },SCAN_PERIOD);
+//
+//        scanner.startScan(leScanFilter,builderScanSettings.build(),mLeScanCallback);
+//        scanBt.setEnabled(false);
+//
+//    }
+//
+//
+//
+//    private ScanCallback mLeScanCallback = new ScanCallback() {
+//        @Override
+//        public void onScanResult(int callbackType, ScanResult result) {
+//            super.onScanResult(callbackType, result);
+//            statusTv.setText("Scan Successful");
+//            Log.d("Wander Compass","Lo tengo");
+//            mGatt = result.getDevice().connectGatt(mContext,true, mGattCallback);
+//        }
+//
+//
+//        @Override
+//        public void onScanFailed(int errorCode) {
+//            super.onScanFailed(errorCode);
+//            statusTv.setText("Scan Error");
 //
 //        }
-
-        @Override
-        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicWrite(gatt, characteristic, status);
-            Log.d("Wander Compass", "onCharWrite full circle");
-        }
-    };
-
-
-    private void writeLECharacteristic(int number){
-
-        if(!mDeviceConnected)return;
-
-        BluetoothGattCharacteristic characteristic =
-                mGatt.getService(WANDER_COMPASS_UUID).getCharacteristic(WANDER_COMPASS_DIRECTION_CHARACTERISTIC_UUID);
-
-
-        characteristic.setValue(number,BluetoothGattCharacteristic.FORMAT_UINT8,0);
-        mGatt.writeCharacteristic(characteristic);
-
-    }
+//
+//    };
+//
+//
+//    private BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+//        @Override
+//        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+//            super.onConnectionStateChange(gatt, status, newState);
+//            if(newState == STATE_CONNECTED){
+//                mDeviceConnected = true;
+//                mGatt.discoverServices();
+//
+//
+//                runOnUiThread(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        statusTv.setText("Connected!");
+//                        writeCharacteristicLeft.setEnabled(true);
+//                        writeCharacteristicStraight.setEnabled(true);
+//                        writeCharacteristicRight.setEnabled(true);
+//                    }
+//                });
+//
+//            }
+//
+//            if(newState == STATE_CONNECTING){
+//                runOnUiThread(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        statusTv.setText("Connecting...");
+//                    }
+//                });
+//
+//            }
+//
+//            if(newState == STATE_DISCONNECTED){
+//                mDeviceConnected = false;
+//
+//                runOnUiThread(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        statusTv.setText(R.string.ble_standby);
+//                        writeCharacteristicLeft.setEnabled(false);
+//                        writeCharacteristicStraight.setEnabled(false);
+//                        writeCharacteristicRight.setEnabled(false);
+//                    }
+//                });
+//
+//            }
+//        }
+//
+//        @Override
+//        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+//            super.onCharacteristicWrite(gatt, characteristic, status);
+//            Log.d("Wander Compass", "onCharWrite full circle");
+//        }
+//    };
+//
+//
+//    private void writeLECharacteristic(int number){
+//
+//        if(!mDeviceConnected)return;
+//
+//        BluetoothGattCharacteristic characteristic =
+//                mGatt.getService(WANDER_COMPASS_UUID).getCharacteristic(WANDER_COMPASS_DIRECTION_CHARACTERISTIC_UUID);
+//
+//
+//        characteristic.setValue(number,BluetoothGattCharacteristic.FORMAT_UINT8,0);
+//        mGatt.writeCharacteristic(characteristic);
+//
+//    }
 
 
     @Override
@@ -500,28 +583,58 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         switch (v.getId()){
 
             case R.id.scanBt:
-                startLEScan();
+//                startLEScan();
+                BluetoothEvent be = new BluetoothEvent(BluetoothEvent.Event.START_SCAN);
+                EventBus.getDefault().post(be);
                 break;
 
-            case R.id.writeCharacteristicLeft:
-                writeLECharacteristic(0);
+            case R.id.writeCharacteristicLeft: {
+                BluetoothEvent bluetoothEvent = new BluetoothEvent(BluetoothEvent.Event.WRITE_COMMAND, 0);
+                EventBus.getDefault().post(bluetoothEvent);
+            }
+//                writeLECharacteristic(0);
                 break;
 
-            case R.id.writeCharacteristicStraight:
-                writeLECharacteristic(1);
+            case R.id.writeCharacteristicStraight: {
+
+                BluetoothEvent bluetoothEvent = new BluetoothEvent(BluetoothEvent.Event.WRITE_COMMAND, 1);
+                EventBus.getDefault().post(bluetoothEvent);
+//                writeLECharacteristic(1);
+            }
                 break;
 
-            case R.id.writeCharacteristicRight:
-                writeLECharacteristic(2);
+            case R.id.writeCharacteristicRight:{
+
+                BluetoothEvent bluetoothEvent = new BluetoothEvent(BluetoothEvent.Event.WRITE_COMMAND,2);
+                EventBus.getDefault().post(bluetoothEvent);
+//                writeLECharacteristic(2);
+            }
                 break;
 
             case R.id.locationBt:
 
                 if(!mTrackingLocation){
+
                     updatesTv.setText(R.string.getting_gps_location);
-                    startLocationUpdates();
+                    gpsToggleBt.setText(R.string.stop_gps_tracking);
+
+                    LocationEvent locationEvent = new LocationEvent(null,0, LocationEvent.Event.TOGGLE_LOCATION_TRACKING);
+                    EventBus.getDefault().post(locationEvent);
+
+//                    startLocationUpdates();
                 }else{
-                    stopLocationUpdates();
+
+                    LocationEvent locationEvent = new LocationEvent(null,0, LocationEvent.Event.TOGGLE_LOCATION_TRACKING);
+                    EventBus.getDefault().post(locationEvent);
+
+//                    Intent gpsService = new Intent(this, GPSService.class);
+//                    stopService(gpsService);
+
+                    gpsToggleBt.setText(R.string.start_gps_tracking);
+                    locationTv.setText("");
+                    updatesTv.setText("");
+
+//                    stopLocationUpdates();
                 }
 
                 break;
@@ -534,12 +647,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
 
 
-    private String formatDouble(double d){
-
-        DecimalFormat df = new DecimalFormat("#.######");
-        return df.format(d);
-
-
-    }
+//    private String formatDouble(double d){
+//
+//        DecimalFormat df = new DecimalFormat("#.######");
+//        return df.format(d);
+//
+//
+//    }
 
 }
